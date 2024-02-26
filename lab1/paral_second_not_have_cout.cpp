@@ -61,6 +61,8 @@ int main(int argc, char **argv) {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
+    auto startTime = MPI_Wtime();
+
     if (size > N) {
         cout << "so much process" << endl;
         return 0;
@@ -100,8 +102,6 @@ int main(int argc, char **argv) {
 
     while (true) {
 
-        MPI_Barrier(MPI_COMM_WORLD);
-
         vector<double> partOfAxn(countRowsInA);
 
         //calculate Axn with ring shift
@@ -110,7 +110,6 @@ int main(int argc, char **argv) {
             vector<double> tmpVectorForCalculating(counts[recvRank]);
             MPI_Request req[2];
             MPI_Status st[2];
-            MPI_Barrier(MPI_COMM_WORLD);
             MPI_Isend(&partOfX[0], partOfX.size(), MPI_DOUBLE, (rank - i + size) % size, 12345, MPI_COMM_WORLD,
                       &req[0]);
             MPI_Irecv(&tmpVectorForCalculating[0], tmpVectorForCalculating.size(), MPI_DOUBLE, recvRank, 12345,
@@ -125,13 +124,9 @@ int main(int argc, char **argv) {
                 endIndex = countMarginsInMatrix[recvRank + 1];
             }
 
-            MPI_Barrier(MPI_COMM_WORLD);
-
             calculateMatrixVector(partMatrix, tmpVectorForCalculating, countRowsInA, startIndex, endIndex, partOfAxn);
 
-            MPI_Barrier(MPI_COMM_WORLD);
         }
-        MPI_Barrier(MPI_COMM_WORLD);
 
         vector<double> partOfY(countRowsInA);
         differenceVectors(partOfAxn, b, partOfY);
@@ -167,20 +162,21 @@ int main(int argc, char **argv) {
 
         partOfX = tmpX;
 
-            double partOfNormaYn = scalarMultiplication(partOfY, partOfY);
-            double allOfNormaYn = 0.0;
-            MPI_Allreduce(&partOfNormaYn, &allOfNormaYn, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+        double partOfNormaYn = scalarMultiplication(partOfY, partOfY);
+        double allOfNormaYn = 0.0;
+        MPI_Allreduce(&partOfNormaYn, &allOfNormaYn, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 
-            if ((allOfNormaYn / normaB) < (eps * eps)) {
-                break;
-            }
-
-            ++count;
+        if ((allOfNormaYn / normaB) < (eps * eps)) {
+            break;
         }
 
-        MPI_Finalize();
-        if (rank == 0) {
-            cout << count << " iterations" << endl;
-        }
-        return 0;
+        ++count;
     }
+    auto endTime = MPI_Wtime();
+    MPI_Finalize();
+    if (rank == 0) {
+        cout << endTime - startTime << " passed" << endl;
+        cout << count << " iterations" << endl;
+    }
+    return 0;
+}
