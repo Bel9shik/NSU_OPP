@@ -3,7 +3,7 @@
 #include <iostream>
 
 constexpr auto eps = 0.00001;
-constexpr auto N = 20000; // N = 1000
+constexpr auto N = 5000; // N = 1000
 
 using namespace std;
 
@@ -29,7 +29,7 @@ void differenceVectors(const vector<double> &first,const vector<double> &second,
     }
 }
 
-void multiplicationNumVector(vector<double> &vect, double num, vector<double> &neededVector) {
+void multiplicationNumVector(const vector<double> &vect,const double num, vector<double> &neededVector) {
     for (int i = 0; i < vect.size(); ++i) {
         neededVector[i] = vect[i] * num;
     }
@@ -51,6 +51,7 @@ int main(int argc, char **argv) {
 
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
+    auto startTime = MPI_Wtime();
 
     if (size > N) {
         cout << "so much process" << endl;
@@ -62,18 +63,10 @@ int main(int argc, char **argv) {
         int indexStartForMatrix = 0;
         for (int i = j; i > -1; --i) {
             if (i == j) continue;
-//        cout << "I am " << rank << " " << ((N / size) + ((N % size) > (i))) << endl;
             indexStartForMatrix += ((N / size) + ((N % size) > (i)));
         }
         countMarginsInMatrix[j] = indexStartForMatrix;
     }
-
-//    cout << "vector indexes" << endl;
-//    for (const auto &item: countMarginsInMatrix){
-//        cout << item << " ";
-//    }
-//    cout << endl;
-
 
     vector<int> counts(size);
 
@@ -81,19 +74,11 @@ int main(int argc, char **argv) {
         counts[i] = ((N / size) + ((N % size) > i));
     }
 
-//    cout << "vector counts" << endl;
-//    for (const auto &item: counts){
-//        cout << item << " ";
-//    }
-//    cout << endl;
-
     int countRowsInA = counts[rank];
 
     vector<double> partMatrix(N * countRowsInA, 1);
 
     int indexStartForMatrix = countMarginsInMatrix[rank];
-
-//    cout << countRowsInA << " - now, but indexStartForMatrix = " << indexStartForMatrix << endl;
 
     // Initializing the matrix
     int tmpIndex = indexStartForMatrix;
@@ -105,8 +90,6 @@ int main(int argc, char **argv) {
 
     while (true) {
 
-        MPI_Barrier(MPI_COMM_WORLD);
-
         vector<double> partOfAxn(countRowsInA);
         calculateMatrixVector(partMatrix, x, countRowsInA, partOfAxn);
 
@@ -117,44 +100,8 @@ int main(int argc, char **argv) {
 
         MPI_Allgatherv(&partOfY[0], partOfY.size(), MPI_DOUBLE, &allY[0], &counts[0], &countMarginsInMatrix[0], MPI_DOUBLE, MPI_COMM_WORLD);
 
-//        for (int i = 0; i < size; i++) {
-//            MPI_Barrier(MPI_COMM_WORLD);
-//            if (i == rank) {
-//                cout << "I am " << rank << " and my part of Y = ";
-//                for (const auto &item: partOfY) {
-//                    cout << item << " ";
-//                }
-//                cout << endl;
-//            }
-//        }
-
-//        for (int i = 0; i < size; i++) {
-//            MPI_Barrier(MPI_COMM_WORLD);
-//            if (rank == 0) {
-//                cout << "I am " << rank << " and my matrix:" << endl;
-//                for (int j = 0; j < countRowsInA; j++) {
-//                    for (int k = 0; k < N; k++) {
-//                        cout << partMatrix[j * N + k] << " ";
-//                    }
-//                    cout << endl;
-//                }
-//                cout << endl;
-//            }
-//        }
-
-
         vector<double> partOfAyn(countRowsInA);
         calculateMatrixVector(partMatrix, allY, countRowsInA, partOfAyn);
-//        for (int i = 0; i < size; i++) {
-//            MPI_Barrier(MPI_COMM_WORLD);
-//            if (i == rank) {
-//                cout << "I am " << rank << " and my Ayn = ";
-//                for (const auto &item: partOfAyn) {
-//                    cout << item << " ";
-//                }
-//                cout << endl;
-//            }
-//        }
 
         double partOfScalarYnAyn = scalarMultiplication(partOfY, partOfAyn);
         double partOfScalarAynAyn = scalarMultiplication(partOfAyn, partOfAyn);
@@ -171,31 +118,12 @@ int main(int argc, char **argv) {
 
         double tauN = allOfScalarYnAyn / allOfScalarAynAyn;
 
-//        for (int i = 0; i < size; i++) {
-//            MPI_Barrier(MPI_COMM_WORLD);
-//            if (i == rank) {
-//                cout << "I am " << rank << " and my tauN = " << tauN << endl;
-//            }
-//        }
-
         vector<double> partOfTauYn(countRowsInA);
         multiplicationNumVector(partOfY, tauN, partOfTauYn);
 
         vector<double> tmpX(countRowsInA);
-//        if (rank == 0) cout << "========" << " my X = " << x[0] << endl;
         differenceVectors(x, partOfTauYn, tmpX); // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         MPI_Allgatherv(&tmpX[0], tmpX.size(), MPI_DOUBLE, &x[0], &counts[0], &countMarginsInMatrix[0], MPI_DOUBLE, MPI_COMM_WORLD);
-
-//        for (int i = 0; i < size; i++) {
-//            MPI_Barrier(MPI_COMM_WORLD);
-//            if (i == rank) {
-//                cout << "I am " << rank << " and my X = ";
-//                for (const auto &item: x) {
-//                    cout << item << " ";
-//                }
-//                cout << endl;
-//            }
-//        }
 
         double partOfNormaYn = scalarMultiplication(partOfY, partOfY);
         double allOfNormaYn = 0.0;
@@ -209,10 +137,13 @@ int main(int argc, char **argv) {
         ++count;
 
     }
+    auto endTime = MPI_Wtime();
 
     MPI_Finalize();
     if (rank == 0){
         cout << count << " iterations" << endl;
+        cout << "time passed: " << endTime - startTime << endl;
     }
+
     return 0;
 }
