@@ -3,23 +3,23 @@
 #include <iostream>
 
 constexpr auto eps = 0.00001;
-constexpr auto N = 20000; // N = 1000
+constexpr auto N = 65000; // N = 1000
 
 using namespace std;
 
-void calculateMatrixVector(const vector<double> &partOfMatrix, const vector<double> &partOfX, const int countRows,
-                           const int &startIndex, const int &endIndex, vector<double> &neededVector) {
-    for (int i = 0; i < countRows; i++) {
-        for (int j = startIndex; j < endIndex; j++) {
+void calculateMatrixVector(const vector<double> &partOfMatrix, const vector<double> &partOfX, const size_t countRows,
+                           const int &startIndex, const size_t &endIndex, vector<double> &neededVector) {
+    for (size_t i = 0; i < countRows; i++) {
+        for (size_t j = startIndex; j < endIndex; j++) {
             neededVector[i] += partOfMatrix[i * N + j] * partOfX[j - startIndex];
         }
     }
 }
 
-void calculateMatrixVector(const vector<double> &partOfMatrix, const vector<double> &x, const int countRows,
+void calculateMatrixVector(const vector<double> &partOfMatrix, const vector<double> &x, const size_t countRows,
                            vector<double> &neededVector) {
-    for (int i = 0; i < countRows; i++) {
-        for (int j = 0; j < x.size(); j++) {
+    for (size_t i = 0; i < countRows; i++) {
+        for (size_t j = 0; j < x.size(); j++) {
             neededVector[i] += partOfMatrix[i * N + j] * x[j];
         }
     }
@@ -27,20 +27,20 @@ void calculateMatrixVector(const vector<double> &partOfMatrix, const vector<doub
 
 double scalarMultiplication(const vector<double> &first, const vector<double> &second) {
     double tmp = 0;
-    for (int i = 0; i < first.size(); ++i) {
+    for (size_t i = 0; i < first.size(); ++i) {
         tmp += first[i] * second[i];
     }
     return tmp;
 }
 
 void differenceVectors(const vector<double> &first, const vector<double> &second, vector<double> &neededVector) {
-    for (int i = 0; i < neededVector.size(); i++) { //min(first.size(), second.size())
+    for (size_t i = 0; i < neededVector.size(); i++) { //min(first.size(), second.size())
         neededVector[i] = first[i] - second[i];
     }
 }
 
 void multiplicationNumVector(const vector<double> &vect, const double num, vector<double> &neededVector) {
-    for (int i = 0; i < vect.size(); ++i) {
+    for (size_t i = 0; i < vect.size(); ++i) {
         neededVector[i] = vect[i] * num;
     }
 }
@@ -49,8 +49,6 @@ int main(int argc, char **argv) {
     int rank, size;
 
     int count = 0;
-
-    vector<double> b(N, N + 1);
 
     int errCode;
 
@@ -69,7 +67,7 @@ int main(int argc, char **argv) {
     }
 
     vector<int> countMarginsInMatrix(size);
-    for (int j = 0; j < size; j++) {
+    for (size_t j = 0; j < size; j++) {
         int indexStartForMatrix = 0;
         for (int i = j; i > -1; --i) {
             if (i == j) continue;
@@ -80,11 +78,12 @@ int main(int argc, char **argv) {
 
     vector<int> counts(size);
 
-    for (int i = 0; i < size; i++) {
+    for (size_t i = 0; i < size; i++) {
         counts[i] = ((N / size) + ((N % size) > i));
     }
 
     int countRowsInA = counts[rank];
+    vector<double> b(countRowsInA, N + 1);
 
     vector<double> partOfX(countRowsInA, 0);
 
@@ -94,7 +93,7 @@ int main(int argc, char **argv) {
 
     // Initializing the matrix
     int tmpIndex = indexStartForMatrix;
-    for (int i = 0; i < countRowsInA; ++i) {
+    for (size_t i = 0; i < countRowsInA; ++i) {
         partMatrix[i * N + tmpIndex++] = 2;
     }
 
@@ -105,7 +104,7 @@ int main(int argc, char **argv) {
         vector<double> partOfAxn(countRowsInA);
 
         //calculate Axn with ring shift
-        for (int i = 0; i < size; ++i) {
+        for (size_t i = 0; i < size; ++i) {
             int recvRank = (rank + i) % size;
             vector<double> tmpVectorForCalculating(counts[recvRank]);
             MPI_Request req[2];
