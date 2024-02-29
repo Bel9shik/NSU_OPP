@@ -3,13 +3,13 @@
 #include <iostream>
 
 constexpr auto eps = 0.00001;
-constexpr auto N = 5000; // N = 1000
+constexpr auto N = 65000; // N = 1000
 
 using namespace std;
 
-void calculateMatrixVector(const vector<double> &partOfMatrix, const vector<double> &x, const int countRows, vector<double> &neededVector) {
-    for (int i = 0; i < countRows; i++) {
-        for (int j = 0; j < x.size(); j++) {
+void calculateMatrixVector(const vector<double> &partOfMatrix, const vector<double> &x, const size_t countRows, vector<double> &neededVector) {
+    for (size_t i = 0; i < countRows; i++) {
+        for (size_t j = 0; j < x.size(); j++) {
             neededVector[i] += partOfMatrix[i * N + j] * x[j];
         }
     }
@@ -17,20 +17,20 @@ void calculateMatrixVector(const vector<double> &partOfMatrix, const vector<doub
 
 double scalarMultiplication(const vector<double> &first, const vector<double> &second) {
     double tmp = 0;
-    for (int i = 0; i < first.size(); ++i) {
+    for (size_t i = 0; i < first.size(); ++i) {
         tmp += first[i] * second[i];
     }
     return tmp;
 }
 
 void differenceVectors(const vector<double> &first,const vector<double> &second, vector<double> &neededVector) {
-    for (int i = 0; i < neededVector.size(); i++) { //min(first.size(), second.size())
+    for (size_t i = 0; i < neededVector.size(); i++) { //min(first.size(), second.size())
         neededVector[i] = first[i] - second[i];
     }
 }
 
 void multiplicationNumVector(const vector<double> &vect,const double num, vector<double> &neededVector) {
-    for (int i = 0; i < vect.size(); ++i) {
+    for (size_t i = 0; i < vect.size(); ++i) {
         neededVector[i] = vect[i] * num;
     }
 }
@@ -61,7 +61,7 @@ int main(int argc, char **argv) {
     vector<int> countMarginsInMatrix(size);
     for (int j = 0; j < size; j++) {
         int indexStartForMatrix = 0;
-        for (int i = j; i > -1; --i) {
+        for (int i = j; i != -1; --i) {
             if (i == j) continue;
             indexStartForMatrix += ((N / size) + ((N % size) > (i)));
         }
