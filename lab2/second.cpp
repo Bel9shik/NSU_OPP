@@ -21,19 +21,19 @@ vector<double> differenceVectors(const vector<double> &first, const vector<doubl
     return tmp;
 }
 
-int main(int argc, char *argv[]) {
+int main() {
 
     auto startTime = omp_get_wtime();
 
-    size_t N = 5000;//65000
+    size_t N = 75000;//75000
     int count = 0;
 
     vector<double> A(N * N, 1);
 
     //initializing the matrix
     for (size_t i = 0; i < N; ++i) {
-        for (size_t j = 0; j < N; ++j) {
-            //on diagonal
+    for (size_t j = 0; j < N; ++j) {
+    //on diagonal
             if (i == j) {
                 A[i * N + j] = 2; //rand() % 3
                 break;
@@ -49,7 +49,7 @@ int main(int argc, char *argv[]) {
     double scalyAy;
     double scalAyAy;
     double tau;
-    double normaY;
+    double normaY = 0.0;
     vector<double> Axn(N);
     vector<double> y(N);
     vector<double> Ayn(N);
@@ -58,11 +58,10 @@ int main(int argc, char *argv[]) {
 #pragma omp parallel
     {
         while (true) {
-#pragma omp single
-#pragma omp atomic
+#pragma omp single nowait
             ++count;
             //Axn
-#pragma omp for
+#pragma omp for schedule(guided)
             for (size_t i = 0; i < N; ++i) {
                 double num = 0.0;
                 for (size_t j = 0; j < N; ++j) {
@@ -71,12 +70,12 @@ int main(int argc, char *argv[]) {
                 Axn[i] = num;
             }
             //y
-#pragma omp for
+#pragma omp for schedule(guided)
             for (size_t i = 0; i < N; ++i) {
                 y[i] = (Axn[i] - b[i]);
             }
             //Ayn
-#pragma omp for
+#pragma omp for schedule(guided)
             for (size_t i = 0; i < N; ++i) {
                 double num = 0.0;
                 for (size_t j = 0; j < N; ++j) {
@@ -84,16 +83,35 @@ int main(int argc, char *argv[]) {
                 }
                 Ayn[i] = num;
             }
+
 #pragma omp single
             {
-                scalyAy = scalarMultiplication(y, Ayn);
-                scalAyAy = scalarMultiplication(Ayn, Ayn);
+                scalAyAy = 0;
+                scalyAy = 0;
+                normaY = 0.0;
+            }
+            //yAy
+#pragma omp for reduction(+:scalyAy) schedule(guided)
+            for (size_t i = 0; i < y.size(); ++i) {
+                scalyAy += y[i] * Ayn[i];
+            }
+            //AyAy
+#pragma omp for reduction(+:scalAyAy) schedule(guided)
+            for (size_t i = 0; i < Ayn.size(); ++i) {
+                scalAyAy += Ayn[i] * Ayn[i];
+            }
+            //normaY
+#pragma omp for reduction(+:normaY) schedule(guided)
+            for (size_t i = 0; i < y.size(); ++i) {
+                normaY += y[i] * y[i];
+            }
+#pragma omp single
+            {
                 if (scalAyAy == 0) scalAyAy = 1;
                 tau = scalyAy / scalAyAy;
-                normaY = scalarMultiplication(y, y);
             }
 
-#pragma omp for
+#pragma omp for schedule(guided)
             for (size_t i = 0; i < N; ++i) {
                 TauY[i] = (y[i] * tau);
             }
