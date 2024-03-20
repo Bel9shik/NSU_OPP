@@ -1,64 +1,31 @@
 #include <iostream>
 #include <vector>
-#include <cmath>
-#include <stdio.h>
 #include <omp.h>
-#include <stdlib.h>
 
 constexpr auto eps = 0.00001;
 using namespace std;
 
-vector<double> calculateMatrixVector(const vector<double> &A, const vector<double> &x, size_t size) { //size_t
-    vector<double> tmp(size, 0);
-    #pragma omp parallel for
-    for (size_t i = 0; i < size; ++i) {
-        double num = 0.0;
-        for (size_t j = 0; j < size; ++j) {
-            num += A[i * size + j] * x[j];
-        }
-        tmp[i] = num;
-    }
-    return tmp;
-}
-
-double scalarMultiplication(vector<double> &first, vector<double> &second, size_t size) {
+double scalarMultiplication(const vector<double> &first, const vector<double> &second) {
     double tmp = 0.0;
-#pragma omp parallel for reduction(+:tmp)
-    for (size_t i = 0; i < size; ++i) {
+    for (size_t i = 0; i < first.size(); ++i) {
         tmp += first[i] * second[i];
     }
     return tmp;
 }
 
-vector<double> differenceVectors(vector<double> &first, vector<double> &second, size_t size) {
+vector<double> differenceVectors(const vector<double> &first, const vector<double> &second, size_t size) {
     vector<double> tmp(size);
-#pragma omp parallel for
     for (size_t i = 0; i < size; ++i) {
         tmp[i] = (first[i] - second[i]);
     }
     return tmp;
 }
 
-vector<double> multiplicationNumVector(vector<double> &vect, double num, size_t size) {
-    vector<double> tmp(size);
-#pragma omp parallel for
-    for (size_t i = 0; i < size; ++i) {
-        tmp[i] = (vect[i] * num);
-    }
-    return tmp;
-}
-
-double criteriaEndOfCalculating(vector<double> &Ax, vector<double> &b, size_t size) {
-    vector<double> tmp = differenceVectors(Ax, b, size);
-    double crit = sqrt(scalarMultiplication(tmp, tmp, size)) / sqrt(scalarMultiplication(b, b, size));
-    return crit;
-}
-
-int main(int argc, char *argv[]) {
+int main() {
 
     auto startTime = omp_get_wtime();
 
-    size_t N = 5000;//65000
+    size_t N = 75000;//75000
     int count = 0;
 
     vector<double> A(N * N, 1);
@@ -77,32 +44,78 @@ int main(int argc, char *argv[]) {
     vector<double> x(N);
 
     vector<double> b(N, N + 1);
+
+    double normaB = scalarMultiplication(b, b);
+    double scalyAy;
+    double scalAyAy;
+    double tau;
+    double normaY = 0.0;
+    vector<double> Axn(N);
+    vector<double> y(N);
+    vector<double> Ayn(N);
+    vector<double> TauY(N);
+
     while (true) {
         ++count;
-        vector<double> tmpAX = calculateMatrixVector(A, x, N);
+        //Axn
+#pragma omp parallel for schedule(guided)
+        for (size_t i = 0; i < N; ++i) {
+            double num = 0.0;
+            for (size_t j = 0; j < N; ++j) {
+                num += A[i * N + j] * x[j];
+            }
+            Axn[i] = num;
+        }
+        //y
+#pragma omp parallel for schedule(guided)
+        for (size_t i = 0; i < N; ++i) {
+            y[i] = (Axn[i] - b[i]);
+        }
+        //Ayn
+#pragma omp parallel for schedule(guided)
+        for (size_t i = 0; i < N; ++i) {
+            double num = 0.0;
+            for (size_t j = 0; j < N; ++j) {
+                num += A[i * N + j] * y[j];
+            }
+            Ayn[i] = num;
+        }
 
-        vector<double> y = differenceVectors(tmpAX, b, N);
-
-        vector<double> tmpAY = calculateMatrixVector(A, y, N);
-        double scalyAy = scalarMultiplication(y, tmpAY, N);
-        double scalAyAy = scalarMultiplication(tmpAY, tmpAY, N);
+        scalAyAy = 0.0;
+        scalyAy = 0.0;
+        normaY = 0.0;
+        //yAy
+#pragma omp parallel for reduction(+:scalyAy) schedule(guided)
+        for (size_t i = 0; i < y.size(); ++i) {
+            scalyAy += y[i] * Ayn[i];
+        }
+        //AyAy
+#pragma omp parallel for reduction(+:scalAyAy) schedule(guided)
+        for (size_t i = 0; i < Ayn.size(); ++i) {
+            scalAyAy += Ayn[i] * Ayn[i];
+        }
+        //normaY
+#pragma omp parallel for reduction(+:normaY) schedule(guided)
+        for (size_t i = 0; i < y.size(); ++i) {
+            normaY += y[i] * y[i];
+        }
         if (scalAyAy == 0) scalAyAy = 1;
-        double tau = scalyAy / scalAyAy;
+        tau = scalyAy / scalAyAy;
 
-        vector<double> tmpTauY = multiplicationNumVector(y, tau, N);
+#pragma omp parallel for schedule(guided)
+        for (size_t i = 0; i < N; ++i) {
+            TauY[i] = (y[i] * tau);
+        }
 
-        x = differenceVectors(x, tmpTauY, N);
-
-        double crit = criteriaEndOfCalculating(tmpAX, b, N);
-
-        if (crit < eps) break;
+        if ((normaY / normaB) < (eps * eps)) break;
+        x = differenceVectors(x, TauY, N);
     }
 
     auto endTime = omp_get_wtime();
 
     cout << count << " iterations" << endl;
-    cout << "Passed: " << endTime - startTime << endl;
+    cout << "Passed: " << endTime - startTime <<
+         endl;
 
     return 0;
 }
-
