@@ -1,65 +1,47 @@
 #include <iostream>
-#include <stdlib.h>
+#include <cstdlib>
 #include <ctime>
 #include <mpi.h>
 
 using namespace std;
+constexpr int MAIN_PROCESS = 0;
 
-bool isMainProcess(const int processRank) {
-    return processRank == 0;
-}
-
-void printMatrix(const double *matrix, const int rowsCount, const int columnsCount) {
-    for (int i = 0; i < rowsCount; i++) {
-        for (int j = 0; j < columnsCount; j++) {
-            cout << matrix[i * columnsCount + j] << " ";
-        }
-        cout << endl;
-    }
-    cout << endl;
-}
-
-void printElapsedTime(const double elapsedTime) {
-    cout << "elapsedTime: " << elapsedTime << " sec" << endl;
-}
-
-bool isProcessInFirstColumnInCartTopology(const int *coords, const int coordYIndex) {
-    return coords[coordYIndex] == 0;
-}
-
-bool isProcessInFirstRowInCartTopology(const int *coords, const int coordXIndex) {
-    return coords[coordXIndex] == 0;
-}
-
-void fillMatrix(double *matrix, int rowsCount, int columnCount) {
-    for (int i = 0; i < rowsCount; ++i) {
-        for (int j = 0; j < columnCount; ++j) {
-            matrix[i * columnCount + j] = i + 1;
+void fillMatrix(double* matrix, int n1, int n2) {
+    for (int i = 0; i < n1; i++) {
+        for (int j = 0; j < n2; j++) {
+            matrix[i * n2 + j] = 1;
         }
     }
 }
 
-bool isCorrectCalculation(const double *matrixC, int rowsCount, int columnsCount,
-                          int rowsCountMatrixB) {
-    int sum = 0;
-    int sumBase = ((1 + rowsCountMatrixB) * rowsCountMatrixB) / 2;
-    for (int i = 0; i < rowsCount; ++i) {
-        sum += sumBase;
-//        std::cout << sum << std:: endl;
-        for (int j = 0; j < columnsCount; ++j) {
-            if (matrixC[i * columnsCount + j] != sum) {
-                return false;
+void multMatrix(double* A, double* B, double* C, int n1, int n2, int n3) {
+    for (int i = 0; i < n1; ++i) {
+        for (int j = 0; j < n2; ++j) {
+            for (int k = 0; k < n3; ++k) {
+                C[i * n3 + k] += A[i * n2 + j] * B[j * n3 + k];
             }
         }
     }
-    std::cout << std::endl;
-    return true;
 }
 
-int main(int argc, char *argv[]) {
+bool checkCalculate(double* A, double* B, double* C, int n1, int n2, int n3) {
+    bool flag = true;
+    for (int i = 0; i < n1; ++i) {
+        for (int k = 0; k < n3; ++k) {
+            double currSum = 0;
+            for (int j = 0; j < n2; ++j) {
+                currSum += A[i * n2 + j] * B[j * n3 + k];
+            }
+            flag = (C[i * n3 + k] == currSum);
+        }
+    }
+    return flag;
+}
+
+int main(int argc, char* argv[]) {
 
     if (argc != 4) {
-        std::cout << "Bad input! Enter matrix size" << std::endl;
+        std::cout << "Bad input! Enter matrix size: ./main n1 n2 n3" << std::endl;
     }
 
     const int n1 = atoi(argv[1]);
@@ -68,206 +50,137 @@ int main(int argc, char *argv[]) {
 
     MPI_Init(&argc, &argv);
 
-    int totalProcessesNumber;           // число процессов в области связи
-    MPI_Comm_size(MPI_COMM_WORLD, &totalProcessesNumber);
+    int size, rank;
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
-    int currentProcessRank;             // номер текущего процесса
-    MPI_Comm_rank(MPI_COMM_WORLD, &currentProcessRank);
+    const int dimN = 2;
+    const int coordX = 0;
+    const int coordY = 1;
 
-    const int dimensionsNumber = 2;     // количество измерений (2D)
-    const int coordXIndex = 0;
-    const int coordYIndex = 1;
+    int dims[dimN];
+    fill(dims, dims + dimN, 0);
 
-    int dims[dimensionsNumber];         // массив, содержащий количество процессов в каждом измерении
-    fill(dims, dims + dimensionsNumber, 0);
+    int periods[dimN];
+    fill(periods, periods + dimN, 0);
 
-    int periods[dimensionsNumber];      // периодические граничные условия, логический массив
-    fill(periods, periods + dimensionsNumber, 0);
+    int coords[dimN];
 
-    int coords[dimensionsNumber];       // координаты текущего процесса
-
-    MPI_Comm gridComm;                  // новые коммуникаторы
+    MPI_Comm gridComm;
     MPI_Comm columnsComm;
     MPI_Comm rowsComm;
 
-    // MPI_Dims_create создает (выгодное) разделение процессов в декартовой сетке
-    MPI_Dims_create(totalProcessesNumber, dimensionsNumber, dims);
+    MPI_Dims_create(size, dimN, dims);
+    MPI_Cart_create(MPI_COMM_WORLD, dimN, dims, periods, 1, &gridComm); //
+    MPI_Cart_coords(gridComm, rank, dimN, coords);
 
-    // MPI_Cart_create создаёт новый коммуникатор с заданной декартовой топологией
-    MPI_Cart_create(MPI_COMM_WORLD, dimensionsNumber, dims, periods, 1, &gridComm);
-
-    // MPI_Cart_coords определяет координаты процесса по его номеру в данной области
-    MPI_Cart_coords(gridComm, currentProcessRank, dimensionsNumber, coords);
-
-    // MPI_Comm_split разделит коммуникатор gridComm на непересекающиеся субкоммуникаторы
-    MPI_Comm_split(gridComm, coords[coordYIndex], coords[coordXIndex], &columnsComm);
-    MPI_Comm_split(gridComm, coords[coordXIndex], coords[coordYIndex], &rowsComm);
-
-    // создание необходимых матриц
-    double *matrixA;
-    double *matrixB;
-    double *matrixC;
-
-    double startTime;
-
-    if (isMainProcess(currentProcessRank)) {
-        matrixA = new double[n1 * n2];
-        matrixB = new double[n2 * n3];
-        matrixC = new double[n1 * n3];
-
-//        srand(time(NULL));
-
-        // заполнение матриц А и В
-//        for (int i = 0; i < n1; i++) {
-//            for (int j = 0; j < n2; j++) {
-//                matrixA[i * n2 + j] = rand() % 5;
-//            }
-//        }
-        fillMatrix(matrixA, n1, n2);
-
-//        for (int i = 0; i < n2; i++) {
-//            for (int j = 0; j < n3; j++) {
-//                matrixB[i * n3 + j] = rand() % 5;
-//            }
-//        }
-        fillMatrix(matrixB, n2, n3);
-
-//        printInfoAboutMatrix("matrixA", n1, n2, matrixA);
-//        printInfoAboutMatrix("matrixB", n2, n3, matrixB);
-
-        startTime = MPI_Wtime();
-    }
-    // Размер матрицы должен быть кратен количеству запущенных процессов
-    int rowsInOneSegmentNum = n1 / dims[coordXIndex];
-    int columnsInOneSegmentNum = n3 / dims[coordYIndex];
-
-    double *matASegment = new double[rowsInOneSegmentNum * n2];
-    double *matBSegment = new double[columnsInOneSegmentNum * n2];
-    double *matCSegment = new double[rowsInOneSegmentNum * columnsInOneSegmentNum];
-    fill(matCSegment, matCSegment + rowsInOneSegmentNum * columnsInOneSegmentNum,0);
-
-    // 1. Распределение матрицы А по горизонтальным полосам вдоль координаты (х, 0)
-    if (isProcessInFirstColumnInCartTopology(coords, coordYIndex)) {
-        MPI_Scatter(matrixA,
-                    rowsInOneSegmentNum * n2,
-                    MPI_DOUBLE,
-                    matASegment,
-                    rowsInOneSegmentNum * n2,
-                    MPI_DOUBLE,
-                    0,
-                    columnsComm);
-    }
-
-    // 2. Распределение матрицы В по вертикальным полосам вдоль координаты (0, y)
-    if (isProcessInFirstRowInCartTopology(coords, coordXIndex)) {
-
-        // Создание нового типа данных - MPI вектора
-        MPI_Datatype segmentToSendInVectorRepresentation;
-
-        MPI_Type_vector(n2,
-                        columnsInOneSegmentNum,
-                        n3,
-                        MPI_DOUBLE,
-                        &segmentToSendInVectorRepresentation);
-
-        MPI_Type_commit(&segmentToSendInVectorRepresentation);
-
-        MPI_Datatype segmentToSendInDoubleRepresentation;
-        MPI_Type_create_resized(segmentToSendInVectorRepresentation,
-                                0,
-                                columnsInOneSegmentNum * sizeof(double),
-                                &segmentToSendInDoubleRepresentation);
-        MPI_Type_commit(&segmentToSendInDoubleRepresentation);
-
-        MPI_Scatter(matrixB,
-                    1, // значит, что мы посылаем одну полосу
-                    segmentToSendInDoubleRepresentation,
-                    matBSegment,
-                    n2 * columnsInOneSegmentNum,
-                    MPI_DOUBLE,
-                    0,
-                    rowsComm);
-
-        MPI_Type_free(&segmentToSendInVectorRepresentation);
-        MPI_Type_free(&segmentToSendInDoubleRepresentation);
-    }
-
-    // 3. Распространение полос матрицы А в измерении y
-    MPI_Bcast(matASegment, rowsInOneSegmentNum * n2, MPI_DOUBLE, 0, rowsComm);
-
-    // 4. Распространение полос матрицы В в измерении x
-    MPI_Bcast(matBSegment, n2 * columnsInOneSegmentNum, MPI_DOUBLE, 0, columnsComm);
-
-    // 5. Каждый процесс вычисляет одну подматрицу произведения матриц
-    for (int i = 0; i < rowsInOneSegmentNum; ++i) {
-        for (int j = 0; j < n2; ++j) {
-            for (int k = 0; k < columnsInOneSegmentNum; ++k) {
-                matCSegment[i * columnsInOneSegmentNum + k] +=
-                        matASegment[i * n2 + j] *
-                        matBSegment[j * columnsInOneSegmentNum + k];
-            }
-        }
-    }
-
-    // 6. Сбор по каждому процессу результатов вычислений подматриц матрицы С
-    // в одну матрицу по процессу (0,0)
-    MPI_Datatype segmentToReceive;
-
-    MPI_Type_vector(rowsInOneSegmentNum,
-                    columnsInOneSegmentNum,
-                    n3,
-                    MPI_DOUBLE,
-                    &segmentToReceive);
-
-    MPI_Type_commit(&segmentToReceive);
-
-    MPI_Datatype segmentToReceiveResized;
-    MPI_Type_create_resized(segmentToReceive,
-                            0,
-                            columnsInOneSegmentNum * sizeof(double),
-                            &segmentToReceiveResized);
-    MPI_Type_commit(&segmentToReceiveResized);
-
-    int recvCounts[totalProcessesNumber];
-    int displs[totalProcessesNumber];
-
-    for (int i = 0; i < dims[coordXIndex]; ++i) {
-        for (int j = 0; j < dims[coordYIndex]; ++j) {
-            recvCounts[i * dims[coordYIndex] + j] = 1;
-            displs[i * dims[coordYIndex] + j] = j + i * rowsInOneSegmentNum * dims[coordYIndex];
-        }
-    }
-
-    MPI_Gatherv(matCSegment, columnsInOneSegmentNum * rowsInOneSegmentNum,
-                MPI_DOUBLE, matrixC,
-                recvCounts, displs, segmentToReceiveResized, 0, MPI_COMM_WORLD);
-
-    if (isMainProcess(currentProcessRank)) {
-        double endTime = MPI_Wtime();
-        double totalElapsedTime = endTime - startTime;
-        if (isCorrectCalculation(matrixC, n1, n3, n2)) {
-//            printInfoAboutMatrix("matrixC", n1, n3, matrixC);
-            printElapsedTime(totalElapsedTime);
-        } else {
+    if (n1 % dims[coordX] != 0 || n3 % dims[coordY] != 0) {
+        if (rank == 0) {
             std::cout << "error" << std::endl;
         }
+        return 0;
     }
+
+    MPI_Comm_split(gridComm, coords[coordY], coords[coordX], &columnsComm);
+    MPI_Comm_split(gridComm, coords[coordX], coords[coordY], &rowsComm);
+
+    double* A = (rank == MAIN_PROCESS) ? new double[n1 * n2] : nullptr;
+    double* B = (rank == MAIN_PROCESS) ? new double[n2 * n3] : nullptr;
+    double* C = (rank == MAIN_PROCESS) ? new double[n1 * n3] : nullptr;
+
+    double startTime = 0;
+
+    if (rank == MAIN_PROCESS) {
+
+        srand(time(NULL));
+
+        fillMatrix(A, n1, n2);
+        fillMatrix(B, n2, n3);
+        startTime = MPI_Wtime();
+    }
+
+
+    int rowPartNum = n1 / dims[coordX];
+    int colPartNum = n3 / dims[coordY];
+
+    auto* partA = new double[rowPartNum * n2];
+    auto* partB = new double[colPartNum * n2];
+    auto* partC = new double[rowPartNum * colPartNum];
+
+    fill(partC, partC + rowPartNum * colPartNum, 0);
+
+    if (coords[coordY] == 0) {
+        MPI_Scatter(A, rowPartNum * n2, MPI_DOUBLE, partA, rowPartNum * n2, MPI_DOUBLE, MAIN_PROCESS, columnsComm);
+    }
+
+    if (coords[coordX] == 0) {
+        MPI_Datatype sendB;
+        MPI_Type_vector(n2, colPartNum, n3, MPI_DOUBLE, &sendB);
+        MPI_Type_commit(&sendB);
+
+        MPI_Datatype sendBResized;
+        MPI_Type_create_resized(sendB, 0, colPartNum * sizeof(double), &sendBResized);
+        MPI_Type_commit(&sendBResized);
+
+        MPI_Scatter(B, 1, sendBResized, partB, n2 * colPartNum, MPI_DOUBLE, MAIN_PROCESS, rowsComm);
+
+        MPI_Type_free(&sendB);
+        MPI_Type_free(&sendBResized);
+    }
+
+    MPI_Bcast(partA, rowPartNum * n2, MPI_DOUBLE, MAIN_PROCESS, rowsComm);
+    MPI_Bcast(partB, colPartNum * n2, MPI_DOUBLE, MAIN_PROCESS, columnsComm);
+
+    multMatrix(partA, partB, partC, rowPartNum, n2, colPartNum);
+
+    MPI_Datatype sendC;
+    MPI_Type_vector(rowPartNum, colPartNum, n3, MPI_DOUBLE, &sendC);
+    MPI_Type_commit(&sendC);
+
+    MPI_Datatype sendCResized;
+    MPI_Type_create_resized(sendC, 0, colPartNum * sizeof(double), &sendCResized);
+    MPI_Type_commit(&sendCResized);
+
+    int recvCounts[size];
+    int displs[size];
+
+    for (int i = 0; i < dims[coordX]; ++i) {
+        for (int j = 0; j < dims[coordY]; ++j) {
+            recvCounts[i * dims[coordY] + j] = 1;
+            displs[i * dims[coordY] + j] = j + i * rowPartNum * dims[coordY];
+        }
+    }
+
+    MPI_Gatherv(partC, colPartNum * rowPartNum, MPI_DOUBLE, C, recvCounts, displs, sendCResized, MAIN_PROCESS, MPI_COMM_WORLD);
+
+    MPI_Type_free(&sendC);
+    MPI_Type_free(&sendCResized);
 
     MPI_Comm_free(&gridComm);
     MPI_Comm_free(&rowsComm);
     MPI_Comm_free(&columnsComm);
 
-    free(matASegment);
-    free(matBSegment);
-    free(matCSegment);
+    double  endTime = 0;
+    if (rank == 0) {
+        endTime = MPI_Wtime();
+        double elapsedTime = endTime - startTime;
+        if (!checkCalculate(A, B, C, n1, n2, n3)) {
+            std::cout << "error" << std::endl;
+        } else {
+            std::cout << "elapsedTime: " << elapsedTime << " sec" << std::endl;
+        }
+    }
 
-    if (isMainProcess(currentProcessRank)) {
-        free(matrixA);
-        free(matrixB);
-        free(matrixC);
+    delete[] partA;
+    delete[] partB;
+    delete[] partC;
+
+    if (rank == MAIN_PROCESS) {
+        delete[] A;
+        delete[] B;
+        delete[] C;
     }
 
     MPI_Finalize();
     return 0;
-
 }
