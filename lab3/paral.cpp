@@ -9,7 +9,7 @@ constexpr int MAIN_PROCESS = 0;
 void fillMatrix(double* matrix, int n1, int n2) {
     for (int i = 0; i < n1; i++) {
         for (int j = 0; j < n2; j++) {
-            matrix[i * n2 + j] = 1;
+            matrix[i * n2 + j] = rand() % 25;
         }
     }
 }
