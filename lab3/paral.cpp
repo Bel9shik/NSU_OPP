@@ -102,9 +102,9 @@ int main(int argc, char* argv[]) {
     MPI_Comm_split(gridComm, coords[coordY], coords[coordX], &columnsComm);
     MPI_Comm_split(gridComm, coords[coordX], coords[coordY], &rowsComm);
 
-    auto* A = (rank == MAIN_PROCESS) ? new double[n1 * n2] : nullptr;
-    auto* B = (rank == MAIN_PROCESS) ? new double[n2 * n3] : nullptr;
-    auto* C = (rank == MAIN_PROCESS) ? new double[n1 * n3] : nullptr;
+    auto* matrixA = (rank == MAIN_PROCESS) ? new double[n1 * n2] : nullptr;
+    auto* matrixB = (rank == MAIN_PROCESS) ? new double[n2 * n3] : nullptr;
+    auto* matrixC = (rank == MAIN_PROCESS) ? new double[n1 * n3] : nullptr;
 
     double startTime = 0;
 
@@ -112,51 +112,51 @@ int main(int argc, char* argv[]) {
 
         srand(time(NULL));
 
-        fillMatrix(A, n1, n2);
-        fillMatrix(B, n2, n3);
+        fillMatrix(matrixA, n1, n2);
+        fillMatrix(matrixB, n2, n3);
         startTime = MPI_Wtime();
     }
 
 
-    int rowPartNum = n1 / dims[coordX];
-    int colPartNum = n3 / dims[coordY];
+    int rowsInSegment = n1 / dims[coordX];
+    int columnsInSegment = n3 / dims[coordY];
 
-    auto* partA = new double[rowPartNum * n2];
-    auto* partB = new double[colPartNum * n2];
-    auto* partC = new double[rowPartNum * colPartNum];
+    auto* partA = new double[rowsInSegment * n2];
+    auto* partB = new double[columnsInSegment * n2];
+    auto* partC = new double[rowsInSegment * columnsInSegment];
 
-    fill(partC, partC + rowPartNum * colPartNum, 0);
+    fill(partC, partC + rowsInSegment * columnsInSegment, 0);
 
     if (coords[coordY] == 0) {
-        MPI_Scatter(A, rowPartNum * n2, MPI_DOUBLE, partA, rowPartNum * n2, MPI_DOUBLE, MAIN_PROCESS, columnsComm);
+        MPI_Scatter(matrixA, rowsInSegment * n2, MPI_DOUBLE, partA, rowsInSegment * n2, MPI_DOUBLE, MAIN_PROCESS, columnsComm);
     }
 
     if (coords[coordX] == 0) {
         MPI_Datatype sendB;
-        MPI_Type_vector(n2, colPartNum, n3, MPI_DOUBLE, &sendB);
+        MPI_Type_vector(n2, columnsInSegment, n3, MPI_DOUBLE, &sendB);
         MPI_Type_commit(&sendB);
 
         MPI_Datatype sendBResized;
-        MPI_Type_create_resized(sendB, 0, colPartNum * sizeof(double), &sendBResized);
+        MPI_Type_create_resized(sendB, 0, columnsInSegment * sizeof(double), &sendBResized);
         MPI_Type_commit(&sendBResized);
 
-        MPI_Scatter(B, 1, sendBResized, partB, n2 * colPartNum, MPI_DOUBLE, MAIN_PROCESS, rowsComm);
+        MPI_Scatter(matrixB, 1, sendBResized, partB, n2 * columnsInSegment, MPI_DOUBLE, MAIN_PROCESS, rowsComm);
 
         MPI_Type_free(&sendB);
         MPI_Type_free(&sendBResized);
     }
 
-    MPI_Bcast(partA, rowPartNum * n2, MPI_DOUBLE, MAIN_PROCESS, rowsComm);
-    MPI_Bcast(partB, colPartNum * n2, MPI_DOUBLE, MAIN_PROCESS, columnsComm);
+    MPI_Bcast(partA, rowsInSegment * n2, MPI_DOUBLE, MAIN_PROCESS, rowsComm);
+    MPI_Bcast(partB, columnsInSegment * n2, MPI_DOUBLE, MAIN_PROCESS, columnsComm);
 
-    multMatrix(partA, partB, partC, rowPartNum, n2, colPartNum);
+    multMatrix(partA, partB, partC, rowsInSegment, n2, columnsInSegment);
 
     MPI_Datatype sendC;
-    MPI_Type_vector(rowPartNum, colPartNum, n3, MPI_DOUBLE, &sendC);
+    MPI_Type_vector(rowsInSegment, columnsInSegment, n3, MPI_DOUBLE, &sendC);
     MPI_Type_commit(&sendC);
 
     MPI_Datatype sendCResized;
-    MPI_Type_create_resized(sendC, 0, colPartNum * sizeof(double), &sendCResized);
+    MPI_Type_create_resized(sendC, 0, columnsInSegment * sizeof(double), &sendCResized);
     MPI_Type_commit(&sendCResized);
 
     int recvCounts[size];
@@ -165,11 +165,11 @@ int main(int argc, char* argv[]) {
     for (int i = 0; i < dims[coordX]; ++i) {
         for (int j = 0; j < dims[coordY]; ++j) {
             recvCounts[i * dims[coordY] + j] = 1;
-            displs[i * dims[coordY] + j] = j + i * rowPartNum * dims[coordY];
+            displs[i * dims[coordY] + j] = j + i * rowsInSegment * dims[coordY];
         }
     }
 
-    MPI_Gatherv(partC, colPartNum * rowPartNum, MPI_DOUBLE, C, recvCounts, displs, sendCResized, MAIN_PROCESS, MPI_COMM_WORLD);
+    MPI_Gatherv(partC, columnsInSegment * rowsInSegment, MPI_DOUBLE, matrixC, recvCounts, displs, sendCResized, MAIN_PROCESS, MPI_COMM_WORLD);
 
     MPI_Type_free(&sendC);
     MPI_Type_free(&sendCResized);
@@ -182,7 +182,7 @@ int main(int argc, char* argv[]) {
     if (rank == 0) {
         endTime = MPI_Wtime();
         double elapsedTime = endTime - startTime;
-        if (!checkCorrect(A, B, C, n1, n2, n3)) {
+        if (!checkCorrect(matrixA, matrixB, matrixC, n1, n2, n3)) {
             std::cout << "error" << std::endl;
         } else {
             std::cout << "elapsedTime: " << elapsedTime << " sec" << std::endl;
@@ -194,9 +194,9 @@ int main(int argc, char* argv[]) {
     delete[] partC;
 
     if (rank == MAIN_PROCESS) {
-        delete[] A;
-        delete[] B;
-        delete[] C;
+        delete[] matrixA;
+        delete[] matrixB;
+        delete[] matrixC;
     }
 
     MPI_Finalize();
