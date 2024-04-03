@@ -9,7 +9,7 @@ constexpr int MAIN_PROCESS = 0;
 void fillMatrix(double* matrix, int n1, int n2) {
     for (int i = 0; i < n1; i++) {
         for (int j = 0; j < n2; j++) {
-            matrix[i * n2 + j] = rand() % 25;
+            matrix[i * n2 + j] = 1;
         }
     }
 }
@@ -24,29 +24,47 @@ void multMatrix(double* A, double* B, double* C, int n1, int n2, int n3) {
     }
 }
 
-bool checkCalculate(double* A, double* B, double* C, int n1, int n2, int n3) {
-    bool flag = true;
+bool checkCorrect(double* A, double* B, double* C, int n1, int n2, int n3) {
     for (int i = 0; i < n1; ++i) {
         for (int k = 0; k < n3; ++k) {
             double currSum = 0;
             for (int j = 0; j < n2; ++j) {
                 currSum += A[i * n2 + j] * B[j * n3 + k];
             }
-            flag = (C[i * n3 + k] == currSum);
+            if (C[i * n3 + k] != currSum) {
+                return false;
+            }
         }
     }
-    return flag;
+    return true;
+}
+
+bool isNumber(const std::string& str) {
+    try {
+        std::stod(str);
+        return true;
+    } catch (...) {
+        return false;
+    }
 }
 
 int main(int argc, char* argv[]) {
 
     if (argc != 4) {
-        std::cout << "Bad input! Enter matrix size: ./main n1 n2 n3" << std::endl;
+        std::cout << "Enter ./main n1 n2 n3" << std::endl;
+        return 0;
     }
 
+
+    if (isNumber(argv[1]) && isNumber(argv[2]) && isNumber(argv[3])) {
+    } else {
+        std::cout << "enter only nums" << std::endl;
+    }
     const int n1 = atoi(argv[1]);
     const int n2 = atoi(argv[2]);
     const int n3 = atoi(argv[3]);
+
+    if (argv[1])
 
     MPI_Init(&argc, &argv);
 
@@ -84,9 +102,9 @@ int main(int argc, char* argv[]) {
     MPI_Comm_split(gridComm, coords[coordY], coords[coordX], &columnsComm);
     MPI_Comm_split(gridComm, coords[coordX], coords[coordY], &rowsComm);
 
-    double* A = (rank == MAIN_PROCESS) ? new double[n1 * n2] : nullptr;
-    double* B = (rank == MAIN_PROCESS) ? new double[n2 * n3] : nullptr;
-    double* C = (rank == MAIN_PROCESS) ? new double[n1 * n3] : nullptr;
+    auto* A = (rank == MAIN_PROCESS) ? new double[n1 * n2] : nullptr;
+    auto* B = (rank == MAIN_PROCESS) ? new double[n2 * n3] : nullptr;
+    auto* C = (rank == MAIN_PROCESS) ? new double[n1 * n3] : nullptr;
 
     double startTime = 0;
 
@@ -164,7 +182,7 @@ int main(int argc, char* argv[]) {
     if (rank == 0) {
         endTime = MPI_Wtime();
         double elapsedTime = endTime - startTime;
-        if (!checkCalculate(A, B, C, n1, n2, n3)) {
+        if (!checkCorrect(A, B, C, n1, n2, n3)) {
             std::cout << "error" << std::endl;
         } else {
             std::cout << "elapsedTime: " << elapsedTime << " sec" << std::endl;
